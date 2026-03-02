@@ -6,8 +6,8 @@ const EMAILJS_PUBLIC_KEY = "ysexeCKedRLsOxaWa";
 const EMAILJS_SERVICE_ID = "service_q8lj6l1";
 const EMAILJS_TEMPLATE_ID = "template_trbmjll";
 
-const BOROUGHS = ["Manhattan","Brooklyn","Queens","Bronx","Staten Island","Long Island","Westchester","Other"];
-const LEAD_SOURCES = ["Redfin","Zillow","StreetEasy","Referral","Cold Call","Website","Other"];
+const BOROUGHS = ["Manhattan","Brooklyn","Queens","Bronx","Staten Island","Yonkers","Long Island","Westchester","Other"];
+const LEAD_SOURCES = ["Facebook","Instagram","Wailk-in","Referral","Redfin","Zillow","StreetEasy","Referral","Cold Call","Website","Other"];
 const STATUSES = ["New","Contacted","Interested","Not Interested","Follow-up","Closed"];
 const OUTCOMES = ["Connected","Voicemail","No Answer","Wrong Number","Not Interested","Interested","Callback Requested"];
 
