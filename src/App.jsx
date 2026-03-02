@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Analytics } from "@vercel/analytics/react";
 
 const EMAILJS_PUBLIC_KEY = "ysexeCKedRLsOxaWa";
 const EMAILJS_SERVICE_ID = "service_q8lj6l1";
@@ -429,6 +430,7 @@ export default function App() {
           </div>
         </div>
       )}
+      <Analytics />
     </div>
   );
 }
