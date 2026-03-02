@@ -32,13 +32,15 @@ export default function App() {
   const [agents, setAgents] = useState([]);
   const [calls, setCalls] = useState([]);
   const [followUps, setFollowUps] = useState([]);
+  const [followupLogs, setFollowupLogs] = useState([]);
   const [callers, setCallers] = useState(() => JSON.parse(localStorage.getItem("lux_callers") || '["Imtiaj"]'));
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState("");
   const [showAgentModal, setShowAgentModal] = useState(false);
   const [showCallModal, setShowCallModal] = useState(false);
-  const [showCallerSettings, setShowCallerSettings] = useState(false);
+  const [showFULogModal, setShowFULogModal] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState(null);
+  const [selectedFU, setSelectedFU] = useState(null);
   const [viewAgent, setViewAgent] = useState(null);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("All");
@@ -46,6 +48,7 @@ export default function App() {
   const [newCallerName, setNewCallerName] = useState("");
   const [agentForm, setAgentForm] = useState({first_name:"",last_name:"",phone:"",email:"",brokerage:"",borough:"",lead_source:"",status:"New",notes:""});
   const [callForm, setCallForm] = useState({caller_name:"",type:"Outbound",outcome:"",duration:"",notes:"",schedule_followup:false,followup_date:"",followup_time:"",followup_notes:""});
+  const [fuLogForm, setFuLogForm] = useState({caller_name:"",outcome:"",duration:"",notes:""});
 
   useEffect(() => { localStorage.setItem("lux_callers", JSON.stringify(callers)); }, [callers]);
 
@@ -53,12 +56,13 @@ export default function App() {
 
   const load = async () => {
     setLoading(true);
-    const [a,c,f] = await Promise.all([
+    const [a,c,f,fl] = await Promise.all([
       api("agents","GET",null,"?order=created_at.desc"),
       api("calls","GET",null,"?order=created_at.desc"),
-      api("follow_ups","GET",null,"?order=created_at.desc")
+      api("follow_ups","GET",null,"?order=created_at.desc"),
+      api("followup_logs","GET",null,"?order=created_at.desc"),
     ]);
-    setAgents(a||[]); setCalls(c||[]); setFollowUps(f||[]);
+    setAgents(a||[]); setCalls(c||[]); setFollowUps(f||[]); setFollowupLogs(fl||[]);
     setLoading(false);
   };
 
@@ -86,7 +90,7 @@ export default function App() {
     e.preventDefault();
     await api("agents","POST",agentForm);
     setAgentForm({first_name:"",last_name:"",phone:"",email:"",brokerage:"",borough:"",lead_source:"",status:"New",notes:""});
-    setShowAgentModal(false); load(); showToast("✅ Agent added successfully!");
+    setShowAgentModal(false); load(); showToast("✅ Agent added!");
   };
 
   const saveCall = async (e) => {
@@ -96,9 +100,22 @@ export default function App() {
     if (schedule_followup && followup_date) {
       await api("follow_ups","POST", { agent_id: selectedAgent.id, agent_name: `${selectedAgent.first_name} ${selectedAgent.last_name}`, phone: selectedAgent.phone, brokerage: selectedAgent.brokerage, date: followup_date, time: followup_time, notes: followup_notes, completed: false });
       showToast("✅ Call logged & follow-up scheduled!");
-    } else { showToast("✅ Call logged successfully!"); }
+    } else { showToast("✅ Call logged!"); }
     setCallForm({caller_name:"",type:"Outbound",outcome:"",duration:"",notes:"",schedule_followup:false,followup_date:"",followup_time:"",followup_notes:""});
     setShowCallModal(false); load();
+  };
+
+  const saveFULog = async (e) => {
+    e.preventDefault();
+    await api("followup_logs","POST", {
+      followup_id: selectedFU.id,
+      agent_id: selectedFU.agent_id,
+      agent_name: selectedFU.agent_name,
+      type: "Follow-up",
+      ...fuLogForm
+    });
+    setFuLogForm({caller_name:"",outcome:"",duration:"",notes:""});
+    setShowFULogModal(false); load(); showToast("✅ Follow-up call logged!");
   };
 
   const completeFU = async (id) => { await api("follow_ups","PATCH",{completed:true},`?id=eq.${id}`); load(); showToast("✅ Follow-up completed!"); };
@@ -120,12 +137,14 @@ export default function App() {
   const statusColor = (s) => ({New:"blue",Contacted:"yellow",Interested:"green","Not Interested":"red","Follow-up":"purple",Closed:"gray"}[s]||"gray");
   const outcomeColor = (o) => o==="Interested"?"green":o==="Not Interested"?"red":o==="Connected"?"blue":o==="Callback Requested"?"purple":"yellow";
 
-  const input = { width:"100%", padding:"12px 14px", borderRadius:10, border:`1px solid ${C.border}`, fontSize:14, outline:"none", boxSizing:"border-box", background:C.white, color:C.darkText, fontFamily:"inherit" };
-  const label = { fontWeight:600, fontSize:13, display:"block", marginBottom:6, color:"#374151" };
+  const inp = { width:"100%", padding:"12px 14px", borderRadius:10, border:`1px solid ${C.border}`, fontSize:14, outline:"none", boxSizing:"border-box", background:C.white, color:C.darkText, fontFamily:"inherit" };
+  const lbl = { fontWeight:600, fontSize:13, display:"block", marginBottom:6, color:"#374151" };
+  const modalWrap = { position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:200 };
+  const modalBox = { background:C.white, borderRadius:"20px 20px 0 0", padding:"24px 20px", width:"100%", maxWidth:540, maxHeight:"92vh", overflowY:"auto" };
 
   if (loading) return (
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100vh",background:C.bg,fontFamily:"sans-serif"}}>
-      <div style={{fontSize:32,marginBottom:16}}>⚡</div>
+      <div style={{fontSize:32,marginBottom:12}}>⚡</div>
       <div style={{fontSize:18,fontWeight:700,color:C.purple}}>Loading Luxentra...</div>
     </div>
   );
@@ -135,31 +154,26 @@ export default function App() {
 
       {/* NAV */}
       <nav style={{background:C.white, borderBottom:`1px solid ${C.border}`, padding:"0 20px", display:"flex", alignItems:"center", justifyContent:"space-between", height:60, position:"sticky", top:0, zIndex:100, boxShadow:"0 1px 4px rgba(0,0,0,0.06)"}}>
-        <button onClick={()=>{setPage("dashboard");setViewAgent(null);}} style={{background:"none",border:"none",cursor:"pointer",fontWeight:800,fontSize:18,color:C.darkText,padding:0}}>
-          LuxEntra Data
-        </button>
-        <div style={{display:"flex",gap:2}}>
-          {[["dashboard","📊 Dashboard"],["agents","👥 Agents"],["calls","📞 Calls"],["followups","📅 Follow-ups"],["settings","⚙️"]].map(([id,label]) => (
-            <button key={id} onClick={()=>{setPage(id);setViewAgent(null);}} style={{padding:"7px 12px",borderRadius:8,border:"none",background:page===id?C.lightPurple:"transparent",color:page===id?C.purple:C.gray,fontWeight:page===id?700:500,cursor:"pointer",fontSize:13,transition:"all 0.15s"}}>
-              {label}
+        <button onClick={()=>{setPage("dashboard");setViewAgent(null);}} style={{background:"none",border:"none",cursor:"pointer",fontWeight:800,fontSize:18,color:C.darkText,padding:0}}>LuxEntra Data</button>
+        <div style={{display:"flex",gap:2,flexWrap:"wrap"}}>
+          {[["dashboard","📊"],["agents","👥"],["calls","📞"],["followups","📅"],["settings","⚙️"]].map(([id,icon]) => (
+            <button key={id} onClick={()=>{setPage(id);setViewAgent(null);}} style={{padding:"7px 12px",borderRadius:8,border:"none",background:page===id?C.lightPurple:"transparent",color:page===id?C.purple:C.gray,fontWeight:page===id?700:500,cursor:"pointer",fontSize:13}}>
+              {icon} {id==="settings"?"":id.charAt(0).toUpperCase()+id.slice(1)}
             </button>
           ))}
         </div>
       </nav>
 
-      {/* TOAST */}
       {toast && <div style={{background:"#1a1a2e",color:"#fff",padding:"12px 20px",textAlign:"center",fontWeight:600,fontSize:13,position:"sticky",top:60,zIndex:99}}>{toast}</div>}
 
       <div style={{maxWidth:1000,margin:"0 auto",padding:"24px 16px"}}>
 
-        {/* ── DASHBOARD ── */}
+        {/* DASHBOARD */}
         {page==="dashboard" && (
           <div>
-            <div style={{marginBottom:24}}>
-              <h1 style={{fontSize:26,fontWeight:800,color:C.darkText,marginBottom:4}}>Dashboard</h1>
-              <p style={{color:C.lightGray,fontSize:13}}>Your cold calling performance overview</p>
-            </div>
-            {dueTodayCount > 0 && (
+            <h1 style={{fontSize:26,fontWeight:800,color:C.darkText,marginBottom:4}}>Dashboard</h1>
+            <p style={{color:C.lightGray,fontSize:13,marginBottom:20}}>Your cold calling performance overview</p>
+            {dueTodayCount>0&&(
               <div onClick={()=>setPage("followups")} style={{background:"#fef3c7",border:"1px solid #fbbf24",borderRadius:12,padding:"12px 16px",marginBottom:20,cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <span style={{fontWeight:700,color:"#92400e"}}>🔔 {dueTodayCount} follow-up{dueTodayCount>1?"s":""} due today!</span>
                 <span style={{color:"#92400e",fontSize:13}}>View →</span>
@@ -167,18 +181,18 @@ export default function App() {
             )}
             <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:14,marginBottom:24}}>
               {[
-                {label:"Total Agents",val:agents.length,icon:"👥",color:"#dbeafe",link:"agents",sub:"Click to view"},
-                {label:"Total Calls",val:calls.length,icon:"📞",color:"#dcfce7",link:"calls",sub:"All time"},
-                {label:"Pending Follow-ups",val:pendingFU,icon:"📅",color:"#fef9c3",link:"followups",sub:"Callbacks remaining"},
-                {label:"Calls This Week",val:weekCalls,icon:"📈",color:"#ede9fe",link:"calls",sub:"Last 7 days"},
-              ].map(({label,val,icon,color,link,sub})=>(
-                <div key={label} onClick={()=>setPage(link)} style={{background:C.white,borderRadius:14,padding:"20px",border:`1px solid ${C.border}`,cursor:"pointer",transition:"box-shadow 0.15s",boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
+                {label:"Total Agents",val:agents.length,icon:"👥",color:"#dbeafe",link:"agents"},
+                {label:"Total Calls",val:calls.length,icon:"📞",color:"#dcfce7",link:"calls"},
+                {label:"Pending Follow-ups",val:pendingFU,icon:"📅",color:"#fef9c3",link:"followups"},
+                {label:"Follow-up Calls",val:followupLogs.length,icon:"🔄",color:"#ede9fe",link:"followups"},
+              ].map(({label,val,icon,color,link})=>(
+                <div key={label} onClick={()=>setPage(link)} style={{background:C.white,borderRadius:14,padding:20,border:`1px solid ${C.border}`,cursor:"pointer",boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
                     <span style={{fontSize:12,fontWeight:600,color:C.lightGray,textTransform:"uppercase",letterSpacing:0.5}}>{label}</span>
                     <div style={{background:color,borderRadius:8,padding:"6px 8px",fontSize:18}}>{icon}</div>
                   </div>
                   <div style={{fontSize:36,fontWeight:800,color:C.darkText,marginBottom:4}}>{val}</div>
-                  <div style={{fontSize:12,color:C.lightGray}}>{sub} →</div>
+                  <div style={{fontSize:12,color:C.lightGray}}>Click to view →</div>
                 </div>
               ))}
             </div>
@@ -188,12 +202,12 @@ export default function App() {
                   <h3 style={{fontWeight:700,color:C.darkText,fontSize:15}}>Recent Calls</h3>
                   <button onClick={()=>setPage("calls")} style={{background:"none",border:"none",color:C.purple,fontWeight:600,cursor:"pointer",fontSize:13}}>View all →</button>
                 </div>
-                {calls.length===0 ? <p style={{color:C.lightGray,fontSize:13,textAlign:"center",padding:"20px 0"}}>No calls logged yet.</p> :
+                {calls.length===0?<p style={{color:C.lightGray,fontSize:13,textAlign:"center",padding:"20px 0"}}>No calls logged yet.</p>:
                   calls.slice(0,5).map(c=>(
                     <div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:`1px solid ${C.bg}`}}>
                       <div>
                         <div style={{fontWeight:600,fontSize:14,color:C.darkText}}>{c.agent_name}</div>
-                        <div style={{color:C.lightGray,fontSize:12}}>{c.caller_name && `${c.caller_name} · `}{c.type} · {new Date(c.created_at).toLocaleDateString()}</div>
+                        <div style={{color:C.lightGray,fontSize:12}}>{c.caller_name&&`👤 ${c.caller_name} · `}{c.type} · {new Date(c.created_at).toLocaleDateString()}</div>
                       </div>
                       <span style={badge(outcomeColor(c.outcome))}>{c.outcome}</span>
                     </div>
@@ -204,7 +218,7 @@ export default function App() {
                   <h3 style={{fontWeight:700,color:C.darkText,fontSize:15}}>Upcoming Follow-ups</h3>
                   <button onClick={()=>setPage("followups")} style={{background:"none",border:"none",color:C.purple,fontWeight:600,cursor:"pointer",fontSize:13}}>View all →</button>
                 </div>
-                {pendingFU===0 ? <p style={{color:C.lightGray,fontSize:13,textAlign:"center",padding:"20px 0"}}>No pending follow-ups.</p> :
+                {pendingFU===0?<p style={{color:C.lightGray,fontSize:13,textAlign:"center",padding:"20px 0"}}>No pending follow-ups.</p>:
                   followUps.filter(f=>!f.completed).slice(0,5).map(f=>(
                     <div key={f.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:`1px solid ${C.bg}`}}>
                       <div>
@@ -219,7 +233,7 @@ export default function App() {
           </div>
         )}
 
-        {/* ── AGENTS ── */}
+        {/* AGENTS LIST */}
         {page==="agents" && !viewAgent && (
           <div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
@@ -227,20 +241,19 @@ export default function App() {
               <button onClick={()=>setShowAgentModal(true)} style={{background:C.purple,color:C.white,border:"none",borderRadius:30,padding:"11px 22px",fontWeight:700,cursor:"pointer",fontSize:14}}>+ Add Agent</button>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:16}}>
-              <input placeholder="🔍  Search by name, brokerage..." value={search} onChange={e=>setSearch(e.target.value)} style={{...input,borderRadius:30,padding:"11px 18px"}} />
+              <input placeholder="🔍  Search by name, brokerage..." value={search} onChange={e=>setSearch(e.target.value)} style={{...inp,borderRadius:30,padding:"11px 18px"}} />
               <div style={{display:"flex",gap:8}}>
-                <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)} style={{...input,flex:1}}>
+                <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)} style={{...inp,flex:1}}>
                   <option value="All">All Statuses</option>{STATUSES.map(s=><option key={s}>{s}</option>)}
                 </select>
-                <select value={filterSource} onChange={e=>setFilterSource(e.target.value)} style={{...input,flex:1}}>
+                <select value={filterSource} onChange={e=>setFilterSource(e.target.value)} style={{...inp,flex:1}}>
                   <option value="All">All Sources</option>{LEAD_SOURCES.map(s=><option key={s}>{s}</option>)}
                 </select>
               </div>
             </div>
             <p style={{color:C.lightGray,fontSize:12,marginBottom:12}}>Showing {filtered.length} of {agents.length} agents</p>
             <div style={{display:"grid",gap:10}}>
-              {filtered.length===0 ?
-                <div style={{background:C.white,borderRadius:14,padding:48,textAlign:"center",color:C.lightGray,border:`1px solid ${C.border}`}}>No agents found. Click <strong>+ Add Agent</strong> to get started!</div> :
+              {filtered.length===0?<div style={{background:C.white,borderRadius:14,padding:48,textAlign:"center",color:C.lightGray,border:`1px solid ${C.border}`}}>No agents found. Click <strong>+ Add Agent</strong> to get started!</div>:
                 filtered.map(a=>(
                   <div key={a.id} onClick={()=>setViewAgent(a)} style={{background:C.white,borderRadius:14,padding:"16px 20px",border:`1px solid ${C.border}`,cursor:"pointer",boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
@@ -266,24 +279,20 @@ export default function App() {
           </div>
         )}
 
-        {/* ── AGENT DETAIL ── */}
+        {/* AGENT DETAIL */}
         {page==="agents" && viewAgent && (
           <div>
-            <button onClick={()=>setViewAgent(null)} style={{background:"none",border:"none",color:C.purple,fontWeight:700,cursor:"pointer",fontSize:14,marginBottom:16,display:"flex",alignItems:"center",gap:4}}>
-              ← Back to Agents
-            </button>
-            <div style={{background:C.white,borderRadius:14,padding:24,border:`1px solid ${C.border}`,marginBottom:16,boxShadow:"0 1px 4px rgba(0,0,0,0.04)"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
-                <div>
-                  <h2 style={{fontSize:22,fontWeight:800,color:C.darkText,marginBottom:6}}>{viewAgent.first_name} {viewAgent.last_name}</h2>
-                  <span style={badge(statusColor(viewAgent.status))}>{viewAgent.status}</span>
-                </div>
+            <button onClick={()=>setViewAgent(null)} style={{background:"none",border:"none",color:C.purple,fontWeight:700,cursor:"pointer",fontSize:14,marginBottom:16}}>← Back to Agents</button>
+            <div style={{background:C.white,borderRadius:14,padding:24,border:`1px solid ${C.border}`,marginBottom:16}}>
+              <div style={{marginBottom:16}}>
+                <h2 style={{fontSize:22,fontWeight:800,color:C.darkText,marginBottom:6}}>{viewAgent.first_name} {viewAgent.last_name}</h2>
+                <span style={badge(statusColor(viewAgent.status))}>{viewAgent.status}</span>
               </div>
               <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:20}}>
                 <button onClick={()=>{setSelectedAgent(viewAgent);setShowCallModal(true);}} style={{background:C.purple,color:C.white,border:"none",borderRadius:10,padding:"10px 18px",fontWeight:700,cursor:"pointer",fontSize:13}}>📞 Log Call</button>
                 <button onClick={()=>deleteAgent(viewAgent.id)} style={{background:"#fef2f2",color:C.red,border:"none",borderRadius:10,padding:"10px 18px",fontWeight:700,cursor:"pointer",fontSize:13}}>🗑 Delete</button>
               </div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
                 {[["📞 Phone",viewAgent.phone||"—"],["✉️ Email",viewAgent.email||"—"],["🏢 Brokerage",viewAgent.brokerage||"—"],["📍 Borough",viewAgent.borough||"—"],["📊 Lead Source",viewAgent.lead_source||"—"],["📅 Added",new Date(viewAgent.created_at).toLocaleDateString()]].map(([k,v])=>(
                   <div key={k} style={{background:C.bg,borderRadius:8,padding:"10px 12px"}}>
                     <div style={{color:C.lightGray,fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5,marginBottom:3}}>{k}</div>
@@ -297,14 +306,14 @@ export default function App() {
               </div>}
             </div>
             <h3 style={{fontWeight:700,marginBottom:10,color:C.darkText,fontSize:15}}>Call History ({calls.filter(c=>c.agent_id===viewAgent.id).length})</h3>
-            <div style={{display:"grid",gap:8}}>
-              {calls.filter(c=>c.agent_id===viewAgent.id).length===0 ?
-                <div style={{background:C.white,borderRadius:14,padding:24,color:C.lightGray,textAlign:"center",border:`1px solid ${C.border}`,fontSize:13}}>No calls logged yet.</div> :
+            <div style={{display:"grid",gap:8,marginBottom:24}}>
+              {calls.filter(c=>c.agent_id===viewAgent.id).length===0?
+                <div style={{background:C.white,borderRadius:14,padding:24,color:C.lightGray,textAlign:"center",border:`1px solid ${C.border}`,fontSize:13}}>No calls logged yet.</div>:
                 calls.filter(c=>c.agent_id===viewAgent.id).map(c=>(
                   <div key={c.id} style={{background:C.white,borderRadius:12,padding:"14px 18px",border:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                     <div>
                       <div style={{fontWeight:600,color:C.darkText,fontSize:13,marginBottom:3}}>
-                        {c.caller_name && <span style={{color:C.purple,marginRight:8}}>👤 {c.caller_name}</span>}
+                        {c.caller_name&&<span style={{color:C.purple,marginRight:8}}>👤 {c.caller_name}</span>}
                         {c.type} · {new Date(c.created_at).toLocaleDateString()} at {new Date(c.created_at).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}
                       </div>
                       {c.duration&&<div style={{color:C.gray,fontSize:12}}>⏱ {c.duration} mins</div>}
@@ -317,16 +326,15 @@ export default function App() {
           </div>
         )}
 
-        {/* ── CALLS ── */}
+        {/* CALLS */}
         {page==="calls" && (
           <div>
             <h1 style={{fontSize:24,fontWeight:800,color:C.darkText,marginBottom:4}}>Calls</h1>
             <p style={{color:C.lightGray,fontSize:13,marginBottom:20}}>All call activity · {calls.length} total</p>
             <div style={{display:"grid",gap:10}}>
-              {calls.length===0 ?
-                <div style={{background:C.white,borderRadius:14,padding:48,textAlign:"center",color:C.lightGray,border:`1px solid ${C.border}`}}>No calls logged yet. Go to an agent and log a call!</div> :
+              {calls.length===0?<div style={{background:C.white,borderRadius:14,padding:48,textAlign:"center",color:C.lightGray,border:`1px solid ${C.border}`}}>No calls logged yet.</div>:
                 calls.map(c=>(
-                  <div key={c.id} style={{background:C.white,borderRadius:12,padding:"16px 20px",border:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",boxShadow:"0 1px 3px rgba(0,0,0,0.03)"}}>
+                  <div key={c.id} style={{background:C.white,borderRadius:12,padding:"16px 20px",border:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                     <div>
                       <div style={{fontWeight:700,fontSize:14,color:C.darkText,marginBottom:4}}>{c.agent_name}</div>
                       <div style={{color:C.gray,fontSize:12,display:"flex",gap:12,flexWrap:"wrap"}}>
@@ -344,56 +352,113 @@ export default function App() {
           </div>
         )}
 
-        {/* ── FOLLOW-UPS ── */}
+        {/* FOLLOW-UPS */}
         {page==="followups" && (
           <div>
             <h1 style={{fontSize:24,fontWeight:800,color:C.darkText,marginBottom:4}}>Follow-ups</h1>
-            <p style={{color:C.lightGray,fontSize:13,marginBottom:20}}>Scheduled callbacks · Email reminders sent automatically each day</p>
-            <div style={{display:"grid",gap:10}}>
-              {followUps.filter(f=>!f.completed).length===0 ?
-                <div style={{background:C.white,borderRadius:14,padding:48,textAlign:"center",color:C.lightGray,border:`1px solid ${C.border}`}}>🎉 No pending follow-ups!</div> :
+            <p style={{color:C.lightGray,fontSize:13,marginBottom:20}}>Scheduled callbacks · Email reminders sent automatically</p>
+
+            {/* Pending Follow-ups */}
+            <div style={{display:"grid",gap:10,marginBottom:32}}>
+              {followUps.filter(f=>!f.completed).length===0?
+                <div style={{background:C.white,borderRadius:14,padding:40,textAlign:"center",color:C.lightGray,border:`1px solid ${C.border}`}}>🎉 No pending follow-ups!</div>:
                 followUps.filter(f=>!f.completed).map(f=>(
-                  <div key={f.id} style={{background:isOverdue(f.date)?"#fff8f8":C.white,borderRadius:12,padding:"16px 20px",border:`1px solid ${isOverdue(f.date)?"#fecaca":C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}>
-                    <div style={{flex:1}}>
-                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,flexWrap:"wrap"}}>
-                        <span style={{fontWeight:700,fontSize:14,color:C.darkText}}>{f.agent_name}</span>
-                        <span style={badge(isOverdue(f.date)?"red":f.date===today?"orange":"purple")}>{isOverdue(f.date)?"Overdue":f.date===today?"Due Today":"Upcoming"}</span>
+                  <div key={f.id} style={{background:isOverdue(f.date)?"#fff8f8":C.white,borderRadius:12,padding:"16px 20px",border:`1px solid ${isOverdue(f.date)?"#fecaca":C.border}`}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12}}>
+                      <div style={{flex:1}}>
+                        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,flexWrap:"wrap"}}>
+                          <span style={{fontWeight:700,fontSize:14,color:C.darkText}}>{f.agent_name}</span>
+                          <span style={badge(isOverdue(f.date)?"red":f.date===today?"orange":"purple")}>{isOverdue(f.date)?"Overdue":f.date===today?"Due Today":"Upcoming"}</span>
+                          {followupLogs.filter(fl=>fl.followup_id===f.id).length>0&&(
+                            <span style={badge("blue")}>🔄 {followupLogs.filter(fl=>fl.followup_id===f.id).length} follow-up call{followupLogs.filter(fl=>fl.followup_id===f.id).length>1?"s":""}</span>
+                          )}
+                        </div>
+                        <div style={{color:C.gray,fontSize:12,display:"flex",flexDirection:"column",gap:3}}>
+                          <span>📅 {new Date(f.date).toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric",year:"numeric"})}{f.time&&` at ${f.time}`}</span>
+                          {f.phone&&<span>📞 {f.phone}</span>}
+                          {f.brokerage&&<span>🏢 {f.brokerage}</span>}
+                          {f.notes&&<span style={{color:C.lightGray}}>📝 {f.notes}</span>}
+                        </div>
                       </div>
-                      <div style={{color:C.gray,fontSize:12,display:"flex",flexDirection:"column",gap:3}}>
-                        <span>📅 {new Date(f.date).toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric",year:"numeric"})}{f.time&&` at ${f.time}`}</span>
-                        {f.phone&&<span>📞 {f.phone}</span>}
-                        {f.brokerage&&<span>🏢 {f.brokerage}</span>}
-                        {f.notes&&<span style={{color:C.lightGray}}>📝 {f.notes}</span>}
+                      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                        <button onClick={()=>{setSelectedFU(f);setShowFULogModal(true);}} style={{background:C.lightPurple,border:"none",borderRadius:8,padding:"9px 14px",fontWeight:700,cursor:"pointer",fontSize:12,color:C.purple,whiteSpace:"nowrap"}}>📞 Log Call</button>
+                        <button onClick={()=>completeFU(f.id)} style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 14px",fontWeight:700,cursor:"pointer",fontSize:12,color:"#374151",whiteSpace:"nowrap"}}>✓ Done</button>
                       </div>
                     </div>
-                    <button onClick={()=>completeFU(f.id)} style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 16px",fontWeight:700,cursor:"pointer",fontSize:12,color:"#374151",whiteSpace:"nowrap"}}>✓ Done</button>
+
+                    {/* Follow-up call logs for this follow-up */}
+                    {followupLogs.filter(fl=>fl.followup_id===f.id).length>0&&(
+                      <div style={{marginTop:12,borderTop:`1px solid ${C.border}`,paddingTop:12}}>
+                        <p style={{color:C.lightGray,fontSize:11,fontWeight:600,textTransform:"uppercase",marginBottom:8}}>Follow-up Call History</p>
+                        {followupLogs.filter(fl=>fl.followup_id===f.id).map(fl=>(
+                          <div key={fl.id} style={{background:C.bg,borderRadius:8,padding:"10px 12px",marginBottom:6,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                            <div>
+                              <div style={{fontWeight:600,fontSize:13,color:C.darkText,marginBottom:2}}>
+                                {fl.caller_name&&<span style={{color:C.purple,marginRight:8}}>👤 {fl.caller_name}</span>}
+                                {new Date(fl.created_at).toLocaleDateString()} at {new Date(fl.created_at).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}
+                              </div>
+                              {fl.duration&&<div style={{color:C.gray,fontSize:11}}>⏱ {fl.duration} mins</div>}
+                              {fl.notes&&<div style={{color:C.gray,fontSize:11,marginTop:2}}>{fl.notes}</div>}
+                            </div>
+                            <span style={badge(outcomeColor(fl.outcome))}>{fl.outcome}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
-              {followUps.filter(f=>f.completed).length>0&&(
-                <div style={{marginTop:16}}>
-                  <p style={{color:C.lightGray,fontSize:12,marginBottom:10,fontWeight:600}}>COMPLETED ({followUps.filter(f=>f.completed).length})</p>
-                  {followUps.filter(f=>f.completed).map(f=>(
-                    <div key={f.id} style={{background:C.bg,borderRadius:10,padding:"12px 16px",border:`1px solid ${C.border}`,marginBottom:6,display:"flex",justifyContent:"space-between",opacity:0.5}}>
-                      <span style={{fontWeight:600,color:"#374151",fontSize:13}}>✓ {f.agent_name}</span>
-                      <span style={{color:C.lightGray,fontSize:12}}>{f.date}</span>
+            </div>
+
+            {/* Follow-up Log Section */}
+            <div style={{marginBottom:24}}>
+              <h2 style={{fontSize:20,fontWeight:800,color:C.darkText,marginBottom:4}}>🔄 Follow-up Log</h2>
+              <p style={{color:C.lightGray,fontSize:13,marginBottom:16}}>All follow-up calls logged · {followupLogs.length} total</p>
+              <div style={{display:"grid",gap:10}}>
+                {followupLogs.length===0?
+                  <div style={{background:C.white,borderRadius:14,padding:40,textAlign:"center",color:C.lightGray,border:`1px solid ${C.border}`}}>No follow-up calls logged yet. Click "📞 Log Call" on a follow-up above.</div>:
+                  followupLogs.map(fl=>(
+                    <div key={fl.id} style={{background:C.white,borderRadius:12,padding:"16px 20px",border:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <div>
+                        <div style={{fontWeight:700,fontSize:14,color:C.darkText,marginBottom:4}}>{fl.agent_name}</div>
+                        <div style={{color:C.gray,fontSize:12,display:"flex",gap:12,flexWrap:"wrap"}}>
+                          {fl.caller_name&&<span>👤 {fl.caller_name}</span>}
+                          <span>🔄 Follow-up Call</span>
+                          <span>📅 {new Date(fl.created_at).toLocaleDateString()}</span>
+                          {fl.duration&&<span>⏱ {fl.duration} mins</span>}
+                        </div>
+                        {fl.notes&&<div style={{color:C.gray,fontSize:12,marginTop:4}}>{fl.notes}</div>}
+                      </div>
+                      <span style={badge(outcomeColor(fl.outcome))}>{fl.outcome}</span>
                     </div>
                   ))}
-                </div>
-              )}
+              </div>
             </div>
+
+            {/* Completed Follow-ups */}
+            {followUps.filter(f=>f.completed).length>0&&(
+              <div>
+                <p style={{color:C.lightGray,fontSize:12,marginBottom:10,fontWeight:600,textTransform:"uppercase"}}>Completed ({followUps.filter(f=>f.completed).length})</p>
+                {followUps.filter(f=>f.completed).map(f=>(
+                  <div key={f.id} style={{background:C.bg,borderRadius:10,padding:"12px 16px",border:`1px solid ${C.border}`,marginBottom:6,display:"flex",justifyContent:"space-between",opacity:0.5}}>
+                    <span style={{fontWeight:600,color:"#374151",fontSize:13}}>✓ {f.agent_name}</span>
+                    <span style={{color:C.lightGray,fontSize:12}}>{f.date}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
-        {/* ── SETTINGS ── */}
+        {/* SETTINGS */}
         {page==="settings" && (
           <div>
             <h1 style={{fontSize:24,fontWeight:800,color:C.darkText,marginBottom:4}}>Settings</h1>
             <p style={{color:C.lightGray,fontSize:13,marginBottom:24}}>Manage your team and preferences</p>
             <div style={{background:C.white,borderRadius:14,padding:24,border:`1px solid ${C.border}`}}>
               <h3 style={{fontWeight:700,fontSize:16,color:C.darkText,marginBottom:4}}>👤 Caller Names</h3>
-              <p style={{color:C.lightGray,fontSize:13,marginBottom:16}}>Add the names of people on your team who log calls</p>
+              <p style={{color:C.lightGray,fontSize:13,marginBottom:16}}>Add names of team members who log calls</p>
               <div style={{display:"flex",gap:10,marginBottom:16}}>
-                <input placeholder="Enter name..." value={newCallerName} onChange={e=>setNewCallerName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addCaller()} style={{...input,flex:1}} />
+                <input placeholder="Enter name..." value={newCallerName} onChange={e=>setNewCallerName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addCaller()} style={{...inp,flex:1}} />
                 <button onClick={addCaller} style={{background:C.purple,color:C.white,border:"none",borderRadius:10,padding:"12px 20px",fontWeight:700,cursor:"pointer",fontSize:14}}>Add</button>
               </div>
               <div style={{display:"grid",gap:8}}>
@@ -409,32 +474,32 @@ export default function App() {
         )}
       </div>
 
-      {/* ── ADD AGENT MODAL ── */}
+      {/* ADD AGENT MODAL */}
       {showAgentModal&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"flex-end",justifyContent:"center",zIndex:200}}>
-          <div style={{background:C.white,borderRadius:"20px 20px 0 0",padding:"24px 20px",width:"100%",maxWidth:540,maxHeight:"90vh",overflowY:"auto"}}>
+        <div style={modalWrap}>
+          <div style={modalBox}>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:20}}>
               <div><h2 style={{fontWeight:800,fontSize:18,color:C.darkText}}>Add New Agent</h2><p style={{color:C.lightGray,fontSize:13}}>Add a real estate contact</p></div>
               <button onClick={()=>setShowAgentModal(false)} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:C.lightGray}}>✕</button>
             </div>
             <form onSubmit={saveAgent}>
-              {[["First Name","first_name","text","Sarah",true],["Last Name","last_name","text","Johnson",true],["Phone","phone","tel","(212) 555-0123",true],["Email","email","email","agent@brokerage.com",false],["Brokerage","brokerage","text","RE/MAX Premier",false]].map(([lbl,key,type,ph,req])=>(
+              {[["First Name","first_name","text","Sarah",true],["Last Name","last_name","text","Johnson",true],["Phone","phone","tel","(212) 555-0123",true],["Email","email","email","agent@brokerage.com",false],["Brokerage","brokerage","text","RE/MAX Premier",false]].map(([l,key,type,ph,req])=>(
                 <div key={key} style={{marginBottom:14}}>
-                  <label style={label}>{lbl}{req?" *":""}</label>
-                  <input type={type} placeholder={ph} required={req} value={agentForm[key]} onChange={e=>setAgentForm({...agentForm,[key]:e.target.value})} style={input} />
+                  <label style={lbl}>{l}{req?" *":""}</label>
+                  <input type={type} placeholder={ph} required={req} value={agentForm[key]} onChange={e=>setAgentForm({...agentForm,[key]:e.target.value})} style={inp} />
                 </div>
               ))}
-              {[["Borough","borough",BOROUGHS,"Select borough"],["Lead Source","lead_source",LEAD_SOURCES,"Select source"],["Status","status",STATUSES,""]].map(([lbl,key,opts,ph])=>(
+              {[["Borough","borough",BOROUGHS,"Select borough"],["Lead Source","lead_source",LEAD_SOURCES,"Select source"],["Status","status",STATUSES,""]].map(([l,key,opts,ph])=>(
                 <div key={key} style={{marginBottom:14}}>
-                  <label style={label}>{lbl}</label>
-                  <select value={agentForm[key]} onChange={e=>setAgentForm({...agentForm,[key]:e.target.value})} style={{...input,background:C.bg}}>
+                  <label style={lbl}>{l}</label>
+                  <select value={agentForm[key]} onChange={e=>setAgentForm({...agentForm,[key]:e.target.value})} style={{...inp,background:C.bg}}>
                     {ph&&<option value="">{ph}</option>}{opts.map(o=><option key={o}>{o}</option>)}
                   </select>
                 </div>
               ))}
               <div style={{marginBottom:20}}>
-                <label style={label}>Notes</label>
-                <textarea placeholder="Any relevant notes..." value={agentForm.notes} onChange={e=>setAgentForm({...agentForm,notes:e.target.value})} style={{...input,minHeight:70,resize:"vertical"}} />
+                <label style={lbl}>Notes</label>
+                <textarea placeholder="Any relevant notes..." value={agentForm.notes} onChange={e=>setAgentForm({...agentForm,notes:e.target.value})} style={{...inp,minHeight:70,resize:"vertical"}} />
               </div>
               <div style={{display:"flex",gap:10}}>
                 <button type="button" onClick={()=>setShowAgentModal(false)} style={{flex:1,padding:13,borderRadius:10,border:`1px solid ${C.border}`,background:C.white,fontWeight:700,cursor:"pointer",fontSize:14}}>Cancel</button>
@@ -445,10 +510,10 @@ export default function App() {
         </div>
       )}
 
-      {/* ── LOG CALL MODAL ── */}
+      {/* LOG CALL MODAL */}
       {showCallModal&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"flex-end",justifyContent:"center",zIndex:200}}>
-          <div style={{background:C.white,borderRadius:"20px 20px 0 0",padding:"24px 20px",width:"100%",maxWidth:540,maxHeight:"92vh",overflowY:"auto"}}>
+        <div style={modalWrap}>
+          <div style={modalBox}>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:20}}>
               <div>
                 <h2 style={{fontWeight:800,fontSize:18,color:C.darkText}}>Log Call</h2>
@@ -458,65 +523,93 @@ export default function App() {
             </div>
             <form onSubmit={saveCall}>
               <div style={{marginBottom:14}}>
-                <label style={label}>Who is calling? *</label>
-                <select required value={callForm.caller_name} onChange={e=>setCallForm({...callForm,caller_name:e.target.value})} style={{...input,background:C.bg}}>
+                <label style={lbl}>Who is calling? *</label>
+                <select required value={callForm.caller_name} onChange={e=>setCallForm({...callForm,caller_name:e.target.value})} style={{...inp,background:C.bg}}>
                   <option value="">Select caller</option>{callers.map(c=><option key={c}>{c}</option>)}
                 </select>
               </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
                 <div>
-                  <label style={label}>Call Type</label>
-                  <select value={callForm.type} onChange={e=>setCallForm({...callForm,type:e.target.value})} style={{...input,background:C.bg}}>
+                  <label style={lbl}>Call Type</label>
+                  <select value={callForm.type} onChange={e=>setCallForm({...callForm,type:e.target.value})} style={{...inp,background:C.bg}}>
                     <option>Outbound</option><option>Inbound</option>
                   </select>
                 </div>
                 <div>
-                  <label style={label}>Duration (mins)</label>
-                  <input type="number" placeholder="5" value={callForm.duration} onChange={e=>setCallForm({...callForm,duration:e.target.value})} style={input} />
+                  <label style={lbl}>Duration (mins)</label>
+                  <input type="number" placeholder="5" value={callForm.duration} onChange={e=>setCallForm({...callForm,duration:e.target.value})} style={inp} />
                 </div>
               </div>
               <div style={{marginBottom:14}}>
-                <label style={label}>Outcome *</label>
-                <select required value={callForm.outcome} onChange={e=>setCallForm({...callForm,outcome:e.target.value})} style={{...input,background:C.bg}}>
+                <label style={lbl}>Outcome *</label>
+                <select required value={callForm.outcome} onChange={e=>setCallForm({...callForm,outcome:e.target.value})} style={{...inp,background:C.bg}}>
                   <option value="">Select outcome</option>{OUTCOMES.map(o=><option key={o}>{o}</option>)}
                 </select>
               </div>
               <div style={{marginBottom:16}}>
-                <label style={label}>Notes</label>
-                <textarea placeholder="What happened on the call?" value={callForm.notes} onChange={e=>setCallForm({...callForm,notes:e.target.value})} style={{...input,minHeight:70,resize:"vertical"}} />
+                <label style={lbl}>Notes</label>
+                <textarea placeholder="What happened on the call?" value={callForm.notes} onChange={e=>setCallForm({...callForm,notes:e.target.value})} style={{...inp,minHeight:70,resize:"vertical"}} />
               </div>
-
-              {/* FOLLOW-UP SECTION */}
               <div style={{background:C.bg,borderRadius:12,padding:16,marginBottom:20}}>
-                <label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",marginBottom: callForm.schedule_followup?14:0}}>
+                <label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",marginBottom:callForm.schedule_followup?14:0}}>
                   <input type="checkbox" checked={callForm.schedule_followup} onChange={e=>setCallForm({...callForm,schedule_followup:e.target.checked})} style={{width:18,height:18,accentColor:C.purple}} />
-                  <span style={{fontWeight:700,fontSize:14,color:C.darkText}}>📅 Schedule a follow-up for this call</span>
+                  <span style={{fontWeight:700,fontSize:14,color:C.darkText}}>📅 Schedule a follow-up</span>
                 </label>
                 {callForm.schedule_followup&&(
                   <div>
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
-                      <div>
-                        <label style={label}>Date *</label>
-                        <input type="date" required value={callForm.followup_date} onChange={e=>setCallForm({...callForm,followup_date:e.target.value})} style={input} />
-                      </div>
-                      <div>
-                        <label style={label}>Time</label>
-                        <input type="time" value={callForm.followup_time} onChange={e=>setCallForm({...callForm,followup_time:e.target.value})} style={input} />
-                      </div>
+                      <div><label style={lbl}>Date *</label><input type="date" required value={callForm.followup_date} onChange={e=>setCallForm({...callForm,followup_date:e.target.value})} style={inp} /></div>
+                      <div><label style={lbl}>Time</label><input type="time" value={callForm.followup_time} onChange={e=>setCallForm({...callForm,followup_time:e.target.value})} style={inp} /></div>
                     </div>
-                    <div>
-                      <label style={label}>Follow-up Notes</label>
-                      <textarea placeholder="What to discuss on follow-up..." value={callForm.followup_notes} onChange={e=>setCallForm({...callForm,followup_notes:e.target.value})} style={{...input,minHeight:60,resize:"vertical"}} />
-                    </div>
+                    <label style={lbl}>Follow-up Notes</label>
+                    <textarea placeholder="What to discuss..." value={callForm.followup_notes} onChange={e=>setCallForm({...callForm,followup_notes:e.target.value})} style={{...inp,minHeight:60,resize:"vertical"}} />
                   </div>
                 )}
               </div>
-
               <div style={{display:"flex",gap:10}}>
                 <button type="button" onClick={()=>setShowCallModal(false)} style={{flex:1,padding:13,borderRadius:10,border:`1px solid ${C.border}`,background:C.white,fontWeight:700,cursor:"pointer",fontSize:14}}>Cancel</button>
-                <button type="submit" style={{flex:1,padding:13,borderRadius:10,border:"none",background:C.purple,color:C.white,fontWeight:700,cursor:"pointer",fontSize:14}}>
-                  {callForm.schedule_followup?"Log Call & Schedule Follow-up":"Log Call"}
-                </button>
+                <button type="submit" style={{flex:1,padding:13,borderRadius:10,border:"none",background:C.purple,color:C.white,fontWeight:700,cursor:"pointer",fontSize:14}}>{callForm.schedule_followup?"Log & Schedule":"Log Call"}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* FOLLOW-UP LOG MODAL */}
+      {showFULogModal&&(
+        <div style={modalWrap}>
+          <div style={modalBox}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:20}}>
+              <div>
+                <h2 style={{fontWeight:800,fontSize:18,color:C.darkText}}>Log Follow-up Call</h2>
+                <p style={{color:C.lightGray,fontSize:13}}>🔄 {selectedFU?.agent_name} · {selectedFU?.phone}</p>
+              </div>
+              <button onClick={()=>setShowFULogModal(false)} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:C.lightGray}}>✕</button>
+            </div>
+            <form onSubmit={saveFULog}>
+              <div style={{marginBottom:14}}>
+                <label style={lbl}>Who is calling? *</label>
+                <select required value={fuLogForm.caller_name} onChange={e=>setFuLogForm({...fuLogForm,caller_name:e.target.value})} style={{...inp,background:C.bg}}>
+                  <option value="">Select caller</option>{callers.map(c=><option key={c}>{c}</option>)}
+                </select>
+              </div>
+              <div style={{marginBottom:14}}>
+                <label style={lbl}>Duration (mins)</label>
+                <input type="number" placeholder="5" value={fuLogForm.duration} onChange={e=>setFuLogForm({...fuLogForm,duration:e.target.value})} style={inp} />
+              </div>
+              <div style={{marginBottom:14}}>
+                <label style={lbl}>Outcome *</label>
+                <select required value={fuLogForm.outcome} onChange={e=>setFuLogForm({...fuLogForm,outcome:e.target.value})} style={{...inp,background:C.bg}}>
+                  <option value="">Select outcome</option>{OUTCOMES.map(o=><option key={o}>{o}</option>)}
+                </select>
+              </div>
+              <div style={{marginBottom:20}}>
+                <label style={lbl}>Notes</label>
+                <textarea placeholder="What happened on the follow-up call?" value={fuLogForm.notes} onChange={e=>setFuLogForm({...fuLogForm,notes:e.target.value})} style={{...inp,minHeight:80,resize:"vertical"}} />
+              </div>
+              <div style={{display:"flex",gap:10}}>
+                <button type="button" onClick={()=>setShowFULogModal(false)} style={{flex:1,padding:13,borderRadius:10,border:`1px solid ${C.border}`,background:C.white,fontWeight:700,cursor:"pointer",fontSize:14}}>Cancel</button>
+                <button type="submit" style={{flex:1,padding:13,borderRadius:10,border:"none",background:C.purple,color:C.white,fontWeight:700,cursor:"pointer",fontSize:14}}>Log Follow-up Call</button>
               </div>
             </form>
           </div>
