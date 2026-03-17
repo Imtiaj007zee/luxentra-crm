@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Analytics } from "@vercel/analytics/react";
 
 const SUPABASE_URL = "https://zxgkiaywdygdwwdkhthl.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp4Z2tpYXl3ZHlnZHd3ZGtodGhsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI0MzE1ODQsImV4cCI6MjA4ODAwNzU4NH0.NL4me0iktO7XU5OUmU0_4aQr8pj_9lcHC0suUqLupzU";
@@ -615,6 +616,7 @@ export default function App() {
           </div>
         </div>
       )}
+      <Analytics />
     </div>
   );
 }
